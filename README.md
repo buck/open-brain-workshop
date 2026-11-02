@@ -21,6 +21,10 @@ choices, paste keys into one file, and check that each step works.
   Any other coding agent works too (Claude Code, Cursor, Codex, …).
 - **uv** — https://docs.astral.sh/uv/. It installs Python for you.
 
+**On a Mac?** These steps have been tested on Linux and Windows, but not yet
+on a Mac. They should work, but if something doesn't match what you see,
+it's the instructions, not you — ask for help.
+
 **Optional homework (exports take hours to arrive):**
 - ChatGPT: Settings → Data Controls → Export Data
 - Claude: Settings → Privacy → Export data
