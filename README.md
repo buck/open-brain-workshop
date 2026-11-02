@@ -1,0 +1,204 @@
+# Build Your Open Brain — Workshop Starter
+
+Build a personal memory that any AI tool can search, using a free coding agent.
+You don't need to be a programmer. The agent writes the code; you make the
+choices, paste keys into one file, and check that each step works.
+
+---
+
+## Before the workshop
+
+**Accounts (all free, no card needed):**
+- **Supabase** — https://supabase.com. Create a project and save the database
+  password somewhere.
+- **Voyage AI** — https://www.voyageai.com. Create an API key. It comes with
+  200M free embedding tokens, far more than you'll use.
+- **Telegram**, if you want to send thoughts from your phone. The agent will
+  walk you through making a bot.
+
+**Install:**
+- **OpenCode** — https://opencode.ai. Its free model is enough for this build.
+  Any other coding agent works too (Claude Code, Cursor, Codex, …).
+- **uv** — https://docs.astral.sh/uv/. It installs Python for you.
+
+**Optional homework (exports take hours to arrive):**
+- ChatGPT: Settings → Data Controls → Export Data
+- Claude: Settings → Privacy → Export data
+- YouTube: https://takeout.google.com → select only "YouTube and YouTube Music"
+
+**One rule all night:** never paste API keys or private files into the chat.
+Free models may log what you send. Keys go in a `.env` file that you edit
+yourself.
+
+---
+
+## Start here
+
+Make an empty folder, open your coding agent in it, and type this one line:
+
+> Read https://raw.githubusercontent.com/buck/open-brain-workshop/main/prompt.txt and follow it.
+
+If your agent can't open web pages, click the copy button at the top right of
+the box below, then paste into the agent.
+
+````text
+You are helping me build "Open Brain": a personal memory I can add thoughts
+to, which any AI tool can search by meaning. I am not an experienced
+programmer. Work in two phases: PLAN, then BUILD.
+
+## About me and how to work with me
+- Explain each new idea in two or three plain sentences before writing code
+  for it (embeddings, vectors, MCP, etc.). I want to understand what I build.
+- Build in small steps. After each step, tell me exactly how to check that it
+  works, then STOP and wait for me to say it worked. If it fails, fix it
+  before moving on.
+- Keep the code small: a few short Python files, no frameworks beyond what is
+  listed below.
+- Check my machine yourself (OS, whether uv is installed) instead of asking.
+
+## Safety rules — follow these strictly
+- Never ask me to paste API keys into the chat. Create a `.env` file with
+  placeholder values and a `.gitignore` that excludes it, then tell me to fill
+  in `.env` myself in an editor.
+- Never print keys or `.env` contents.
+- Do not read my personal data files (bookmarks, exports, notes) into the
+  chat. Look only at their structure — e.g. the first few lines or the JSON
+  keys — then write code that processes them on my machine.
+
+## Fixed architecture (do not change these)
+- Language: Python, managed with `uv` (`uv init`, `uv add`, `uv run`).
+- Database: Supabase Postgres with the pgvector extension. Talk to it with the
+  `supabase` Python package (REST API), not a direct Postgres connection.
+  Use the service_role key, only on my machine, never in anything public.
+- Embeddings: Voyage AI, model `voyage-4-lite`, 1024 dimensions, `voyageai`
+  Python package. Use `input_type="document"` when storing and
+  `input_type="query"` when searching. Batch up to 128 texts per call.
+- Search: an MCP server (Python `mcp` package, FastMCP, stdio transport) with
+  two tools:
+  - `search_brain(query: str, limit: int = 10)` — returns matching memories as
+    plain text with their date and source.
+  - `add_thought(text: str)` — saves a new thought.
+- Every memory row records which embedding model produced it, so it can be
+  re-embedded later with a different model.
+
+Reference SQL — I will paste this into the Supabase SQL Editor myself:
+
+```sql
+create extension if not exists vector with schema extensions;
+
+create table memories (
+  id          bigint generated always as identity primary key,
+  content     text not null,
+  source      text not null default 'thought',  -- thought, bookmark, telegram, ...
+  external_id text,                             -- id in the source, for re-runnable imports
+  metadata    jsonb default '{}'::jsonb,
+  embedding   extensions.vector(1024),
+  model       text not null default 'voyage-4-lite',
+  created_at  timestamptz not null default now(),
+  unique (source, external_id)
+);
+
+alter table memories enable row level security;  -- no policies: only service_role can read
+
+create index on memories using hnsw (embedding extensions.vector_cosine_ops);
+
+create or replace function match_memories(
+  query_embedding extensions.vector(1024),
+  match_count int default 10
+)
+returns table (id bigint, content text, source text, metadata jsonb,
+               created_at timestamptz, similarity float)
+language sql stable
+set search_path = public, extensions
+as $$
+  select id, content, source, metadata, created_at,
+         1 - (embedding <=> query_embedding) as similarity
+  from memories
+  order by embedding <=> query_embedding
+  limit match_count;
+$$;
+```
+
+## PHASE 1 — PLAN
+
+Ask me these questions ONE AT A TIME. For each, give a short explanation of
+the options and say which one you recommend.
+
+1. **Capture channel** — how will I add thoughts besides asking my AI tool?
+   - None for now: add thoughts through the MCP tool and a command-line
+     script. (Simplest. Recommended for a first build.)
+   - Telegram: free, bot made in two minutes with @BotFather. Use long
+     polling, so no public web address is needed. (Recommended if I want my
+     phone.)
+   - Discord or Slack: workable without a public address (Discord bot
+     gateway; Slack Socket Mode), but more setup clicks.
+   - WhatsApp or Instagram: tell me honestly that these are not doable in one
+     evening (Meta developer apps, business accounts, app review, public
+     webhooks) and suggest Telegram instead.
+2. **Which AI tool will search my brain** (the MCP client)? OpenCode itself
+   is the default; Claude Desktop, Claude Code, and Cursor also work with a
+   local MCP server. ChatGPT needs a hosted server — out of scope tonight.
+3. **What to bulk-import** after the basics work:
+   - Browser bookmarks (recommended — ask which browser). Embed the title,
+     URL, and bookmark folder path together; the folder names carry meaning.
+   - Kindle `My Clippings.txt`, or a folder of markdown notes (e.g. Obsidian).
+   - ChatGPT or Claude export (embed only my own messages).
+   - YouTube Takeout search/watch history (the HTML has no charset
+     declaration: parse it as UTF-8 explicitly).
+   - Nothing.
+   Bulk imports embed only — no LLM call per item.
+4. **Auto-tagging** — should each typed thought also go to an LLM to extract
+   topics and people into `metadata`? Default: no. It's a stretch goal, and
+   free models are rate-limited.
+
+Then write `BUILD_BRIEF.md` containing: my answers, the fixed architecture
+above, the file list you plan to create, and the numbered build steps below
+adjusted to my choices, each with its check. Show me the brief and wait for
+my OK before Phase 2.
+
+## PHASE 2 — BUILD (one step at a time, stop after each)
+
+1. **Setup.** `uv init`, add packages, create `.env` (placeholders for
+   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, VOYAGE_API_KEY, plus any channel
+   token) and `.gitignore`. Tell me where to find each key in the dashboards.
+   *Check:* a tiny script loads `.env` and reports which keys are present
+   (without printing them).
+2. **Database.** Give me the SQL to paste into Supabase SQL Editor.
+   *Check:* the `memories` table appears in the Table Editor.
+3. **Embedding test.** A script that embeds one sentence and prints the
+   vector length and first few numbers.
+   *Check:* it prints 1024.
+4. **Add and search from the command line.** `brain.py add "..."` and
+   `brain.py search "..."`.
+   *Check:* I add five thoughts on different topics, then search using words
+   that do NOT appear in them (e.g. add "practicing piano scales", search
+   "music hobbies") and the right thought comes first.
+5. **MCP server.** Build it and register it in my chosen AI tool (for
+   OpenCode, the `mcp` section of `opencode.json`).
+   *Check:* I ask my AI tool "what have I said about music?" and it calls
+   `search_brain`.
+6. **Capture channel** (if chosen). *Check:* I send a message from my phone,
+   get a confirmation reply, and can find it with search.
+7. **Bulk import** (if chosen). Batch embeddings, skip rows already imported
+   (`source` + `external_id`), show progress.
+   *Check:* row count matches what I expect, and a search turns up something
+   I'd forgotten I saved.
+8. **Stretch:** auto-tagging, or a "what was I thinking about in <year>?"
+   query.
+
+When all steps are done, give me a short README: how to start each piece,
+what each file does, and the note that the text is the real data — the
+embeddings can always be regenerated with a different model.
+````
+
+---
+
+## Things to know
+
+- **Supabase pauses free projects** after about a week with no activity.
+  Un-pause it from the dashboard; nothing is lost.
+- **The capture bot only runs while your laptop is on.** Moving it to an
+  always-on machine is a later project.
+- **What leaves your machine:** text you store goes to Voyage (to embed) and
+  Supabase (to store); search results go to whichever AI tool you ask. Don't
+  import anything you wouldn't put in a cloud service.
