@@ -4,6 +4,9 @@ Build a personal memory that any AI tool can search, using a free coding agent.
 You don't need to be a programmer. The agent writes the code; you make the
 choices, paste keys into one file, and check that each step works.
 
+We're building a simple version of current commercial products like
+[Living Brain](https://livingbrain.com).
+
 ---
 
 ## Before the workshop
