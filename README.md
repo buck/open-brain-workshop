@@ -80,6 +80,11 @@ programmer. Work in two phases: PLAN, then BUILD.
 - Embeddings: Voyage AI, model `voyage-4-lite`, 1024 dimensions, `voyageai`
   Python package. Use `input_type="document"` when storing and
   `input_type="query"` when searching. Batch up to 128 texts per call.
+  A free Voyage account with no payment card may allow only about 3 requests
+  a minute. So: embed several texts in one call wherever possible; wrap every
+  Voyage call so a rate-limit error waits 20 seconds and retries (up to 5
+  times), printing "waiting for Voyage's free limit…" instead of a traceback;
+  and if a batch is rejected as too large, halve it and try again.
 - Search: an MCP server (Python `mcp` package, FastMCP, stdio transport) with
   two tools:
   - `search_brain(query: str, limit: int = 10)` — returns matching memories as
@@ -124,6 +129,12 @@ as $$
   order by embedding <=> query_embedding
   limit match_count;
 $$;
+
+-- New Supabase projects hide tables from the API until access is granted.
+-- Only service_role (the key on my machine) gets access; the public keys get none.
+grant select, insert, update, delete on memories to service_role;
+grant usage, select on all sequences in schema public to service_role;
+grant execute on function match_memories to service_role;
 ```
 
 ## PHASE 1 — PLAN
@@ -175,9 +186,10 @@ my OK before Phase 2.
 3. **Embedding test.** A script that embeds one sentence and prints the
    vector length and first few numbers.
    *Check:* it prints 1024.
-4. **Add and search from the command line.** `brain.py add "..."` and
+4. **Add and search from the command line.** `brain.py add "..." "..."`
+   (one or more thoughts, embedded in a single call) and
    `brain.py search "..."`.
-   *Check:* I add five thoughts on different topics, then search using words
+   *Check:* I add five thoughts on different topics in one command, then search using words
    that do NOT appear in them (e.g. add "practicing piano scales", search
    "music hobbies") and the right thought comes first.
 5. **MCP server.** Build it and register it in my chosen AI tool (for
@@ -204,6 +216,11 @@ embeddings can always be regenerated with a different model.
 
 - **Supabase pauses free projects** after about a week with no activity.
   Un-pause it from the dashboard; nothing is lost.
+- **Voyage's free limit is slow without a card.** A new account may allow only
+  about 3 requests a minute. The agent is told to wait and retry, so a pause
+  with a "waiting" message is normal, and a big import can take a while.
+- **"Permission denied for table memories"?** Re-run the three `grant` lines
+  at the end of the SQL in the Supabase SQL Editor.
 - **The capture bot only runs while your laptop is on.** Moving it to an
   always-on machine is a later project.
 - **What leaves your machine:** text you store goes to Voyage (to embed) and
